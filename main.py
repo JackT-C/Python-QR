@@ -1,11 +1,15 @@
+# Import relevant libaries.
 import math
 import reedsolo
 import time
 from typing import Callable
 
-# Constants for Version 1 and 2
+# Constants for Versions 1 and 2.
 VERSION_PARAMETERS = {
+    # Version 1 has maximum size: 21x21.
     1: {"size": 21, "data_codewords": 19, "ec_codewords": 7},
+
+    # Version 2 has maximum size: 25x25.
     2: {"size": 25, "data_codewords": 34, "ec_codewords": 10}
 }
 
@@ -23,7 +27,6 @@ FUNCTION_MODULES = set()
 
 def to_bitstring(data: bytes) -> str:
     return ''.join(f'{b:08b}' for b in data)
-
 
 def make_data_bitstream(text: str, version: int) -> str:
     data_len = len(text)
@@ -43,21 +46,17 @@ def make_data_bitstream(text: str, version: int) -> str:
         i += 1
     return bitstream
 
-
 def generate_error_correction(data_cw: list[int], version: int) -> list[int]:
     ec_cw = VERSION_PARAMETERS[version]['ec_codewords']
     rs = reedsolo.RSCodec(ec_cw)
     full = rs.encode(bytes(data_cw))
     return list(full[-ec_cw:])
 
-
 def initialize_matrix(size: int) -> list[list[int]]:
     return [[-1] * size for _ in range(size)]
 
-
 def mark_function(r: int, c: int):
     FUNCTION_MODULES.add((r, c))
-
 
 def place_finder_pattern(m, r, c):
     pat = [
@@ -73,7 +72,6 @@ def place_finder_pattern(m, r, c):
         for dc in range(7):
             m[r+dr][c+dc] = pat[dr][dc]
             mark_function(r+dr, c+dc)
-
 
 def apply_patterns(m):
     size = len(m)
@@ -98,7 +96,6 @@ def apply_patterns(m):
     m[dm[0]][dm[1]] = 1
     mark_function(*dm)
 
-
 def place_format_info(m, mask_id):
     fmt = FORMAT_STRINGS[mask_id]
     size = len(m)
@@ -110,7 +107,6 @@ def place_format_info(m, mask_id):
     for idx, (r, c) in enumerate(pos2):
         m[r][c] = int(fmt[idx])
         mark_function(r, c)
-
 
 def map_data(m, full_cw):
     bits = ''.join(f'{cw:08b}' for cw in full_cw)
@@ -133,7 +129,6 @@ def map_data(m, full_cw):
         up = not up
         col -= 2
 
-
 def apply_mask(m, mask_id):
     size = len(m)
     def condition(r, c):
@@ -149,7 +144,6 @@ def apply_mask(m, mask_id):
         for c in range(size):
             if (r, c) not in FUNCTION_MODULES and condition(r, c):
                 m[r][c] ^= 1
-
 
 def score_penalty(m):
     size = len(m)
@@ -199,15 +193,14 @@ def score_penalty(m):
     score += k * 10
     return score
 
-
 def print_matrix(m, delay=0.0, 
                  fg_char='██', bg_char='  ', 
-                 fg_color='', bg_color='', 
-                 reset_color='\033[0m', 
+                 fg_colour='', bg_colour='', 
+                 reset_colour='\033[0m', 
                  frame=False, scale=1):
     # Optional: apply ANSI color codes
-    fg = f"{fg_color}{fg_char * scale}"
-    bg = f"{bg_color}{bg_char * scale}"
+    fg = f"{fg_colour}{fg_char * scale}"
+    bg = f"{bg_colour}{bg_char * scale}"
     
     # Optional frame (top)
     if frame:
@@ -229,57 +222,67 @@ def print_matrix(m, delay=0.0,
         time.sleep(delay)
 
 def main():
-    # Get user input for the text (or URL) to encode
+    # Get the user input for the text (or URL) to encode.
     text = input("Enter text to encode: ")
-    # Ask user if they want to see step-by-step QR creation
-    explain = input("Show step-by-step QR creation? (y/N): ").strip().lower() == 'y'
 
-    # Choose QR version based on input length
+    # Ask the user if they want to see the process of the QR's creation.
+    explain = input("Would you like to see the step-by-step of the QR code's creation? (y/n): ").strip().lower() == 'y'
+
+    # Choose the QR version based on input length.
     for version in [1, 2]:
         if len(text) <= VERSION_PARAMETERS[version]['data_codewords']:
             break
     else:
-        print("Input too long for Version 2 QR Code")
+        print("The input is too long for the Version 2 QR Code")
         return
-    customize = input("Custom display? (y/N): ").strip().lower() == 'y'
-    if customize:
+    
+    # Allow for customisation of the QR code.
+    customise = input("Would you like to customise how the QR code is displayed? (y/n): ").strip().lower() == 'y'
+    if customise:
+        # Option to Scale the QR code by a specific ration.
         scale = int(input("Module scale (1-3): ") or "1")
-        frame = input("Add frame? (y/N): ").strip().lower() == 'y'
-        fg_color = input("Foreground color ANSI code (e.g., \033[38;5;46m for green): ") or '\033[38;5;46m'
-        bg_color = input("Background color ANSI code (e.g., \033[48;5;235m for dark gray): ") or '\033[0m'
+
+        # Opton to add a frame to the QR code.
+        frame = input("Would you like to add a frame? (y/n): ").strip().lower() == 'y'
+
+        # Option to set background and foreground colours.
+        fg_colour = input("Foreground colour ANSI code (e.g., \033[38;5;46m for green): ") or '\033[38;5;46m'
+        bg_colour = input("Background colour ANSI code (e.g., \033[48;5;235m for dark gray): ") or '\033[0m'
     else:
+        # Use default values.
         scale = 1
         frame = False
-        fg_color = ''
-        bg_color = ''
+        fg_colour = ''
+        bg_colour = ''
 
+    print(f"Using Version {version} QR Code!")
 
-    print(f"Using Version {version} QR Code")
-    # Convert input text to QR data bitstream
+    # Step-by-step creation of the QR code.
+    # Step 1. Convert input text to QR data bitstream
     bitstream = make_data_bitstream(text, version)
     if explain:
-        print("\nStep 1: Data bitstream")
+        print("\nStep 1: Data bitstream.")
         print(bitstream)
         input("Press Enter to continue...")
 
-    # Split bitstream into data codewords (bytes)
+    # Step 2. Split bitstream into data codewords (bytes)
     data_cw = [int(bitstream[i:i+8], 2) for i in range(0, len(bitstream), 8)]
     if explain:
-        print("\nStep 2: Data codewords (bytes)")
+        print("\nStep 2: Data codewords (bytes).")
         print(data_cw)
         input("Press Enter to continue...")
 
-    # Generate error correction codewords
+    # Step 3. Generate error correction codewords
     ec_cw = generate_error_correction(data_cw, version)
     if explain:
-        print("\nStep 3: Error correction codewords")
+        print("\nStep 3: Error correction codewords.")
         print(ec_cw)
         input("Press Enter to continue...")
 
-    # Combine data and error correction codewords
+    # Step 4. Combine data and error correction codewords
     full_cw = data_cw + ec_cw
     if explain:
-        print("\nStep 4: Combined data + error correction codewords")
+        print("\nStep 4: Combined data + error correction codewords.")
         print(full_cw)
         input("Press Enter to continue...")
 
@@ -299,28 +302,28 @@ def main():
         # Add finder, timing, and other function patterns
         apply_patterns(matrix)
         if explain and mask_id == 0:
-            print("\nStep 5: Function patterns (finder, timing, etc.)")
+            print("\nStep 5: Function patterns (finder, timing, etc).")
             print_matrix(matrix)
             input("Press Enter to continue...")
 
         # Place format information (error correction level and mask id)
         place_format_info(matrix, mask_id)
         if explain and mask_id == 0:
-            print("\nStep 6: Format information")
+            print("\nStep 6: Format information.")
             print_matrix(matrix)
             input("Press Enter to continue...")
 
         # Map data and error correction codewords into the matrix
         map_data(matrix, full_cw)
         if explain and mask_id == 0:
-            print("\nStep 7: Data mapping")
+            print("\nStep 7: Data mapping.")
             print_matrix(matrix)
             input("Press Enter to continue...")
 
         # Apply the current mask pattern
         apply_mask(matrix, mask_id)
         if explain and mask_id == 0:
-            print("\nStep 8: Mask pattern applied (mask 0 shown)")
+            print("\nStep 8: Mask pattern applied (mask 0 shown).")
             print_matrix(matrix)
             input("Press Enter to continue...")
 
@@ -337,14 +340,13 @@ def main():
     print_matrix(
         best_matrix,
         fg_char='██', bg_char='  ',
-        fg_color=fg_color,
-        bg_color=bg_color,
+        fg_colour=fg_colour,
+        bg_colour=bg_colour,
         frame=frame,
         scale=scale
     )
 
     print_matrix(best_matrix)
-
 
 if __name__ == '__main__':
     main()
