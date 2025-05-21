@@ -1,15 +1,15 @@
-# Import relevant libaries.
+# Import relevant libraries
 import math
 import reedsolo
 import time
 from typing import Callable
 
-# Constants for Versions 1 and 2.
+# Constants for Versions 1 and 2
 VERSION_PARAMETERS = {
-    # Version 1 has maximum size: 21x21.
+    # Version 1 has maximum size: 21x21
     1: {"size": 21, "data_codewords": 19, "ec_codewords": 7},
 
-    # Version 2 has maximum size: 25x25.
+    # Version 2 has maximum size: 25x25
     2: {"size": 25, "data_codewords": 34, "ec_codewords": 10}
 }
 
@@ -24,11 +24,25 @@ FORMAT_STRINGS = [
 
 FUNCTION_MODULES = set()
 
-
 def to_bitstring(data: bytes) -> str:
+    """
+    Convert a bytes object to a continuous bit string representation.
+    
+    @param data: Binary data to convert
+    @return: String of binary digits representing the input data
+    """
     return ''.join(f'{b:08b}' for b in data)
 
 def make_data_bitstream(text: str, version: int) -> str:
+    """
+    Construct the complete data bitstream for QR encoding following ISO/IEC 18004 specifications.
+    
+    Includes mode indicator, length header, data payload, terminator, and padding bits.
+    
+    @param text: Input text to encode
+    @param version: QR code version (1 or 2)
+    @return: Formatted bitstring ready for error correction coding
+    """
     data_len = len(text)
     count_indicator = f'{data_len:08b}'
     max_data_cw = VERSION_PARAMETERS[version]["data_codewords"]
@@ -47,18 +61,46 @@ def make_data_bitstream(text: str, version: int) -> str:
     return bitstream
 
 def generate_error_correction(data_cw: list[int], version: int) -> list[int]:
+    """
+    Generate Reed-Solomon error correction codewords for the input data.
+    
+    @param data_cw: List of data codewords
+    @param version: QR code version determining error correction capacity
+    @return: List of error correction codewords
+    """
     ec_cw = VERSION_PARAMETERS[version]['ec_codewords']
     rs = reedsolo.RSCodec(ec_cw)
     full = rs.encode(bytes(data_cw))
     return list(full[-ec_cw:])
 
 def initialize_matrix(size: int) -> list[list[int]]:
+    """
+    Create an empty QR code matrix with all positions initialised to -1.
+    
+    @param size: Dimension of square matrix (size x size)
+    @return: 2D list representing empty QR code grid
+    """
     return [[-1] * size for _ in range(size)]
 
 def mark_function(r: int, c: int):
+    """
+    Mark a matrix position as containing functional patterns that should not be modified.
+    
+    @param r: Row index
+    @param c: Column index
+    """
     FUNCTION_MODULES.add((r, c))
 
 def place_finder_pattern(m, r, c):
+    """
+    Insert a 7x7 finder pattern at specified coordinates in the matrix.
+    
+    Finder patterns consist of concentric squares with centre alignment.
+    
+    @param m: QR code matrix
+    @param r: Top-left row coordinate
+    @param c: Top-left column coordinate
+    """
     pat = [
         [1,1,1,1,1,1,1],
         [1,0,0,0,0,0,1],
@@ -74,6 +116,15 @@ def place_finder_pattern(m, r, c):
             mark_function(r+dr, c+dc)
 
 def place_alignment_pattern(m, r, c):
+    """
+    Insert a 5x5 alignment pattern at specified coordinates in the matrix.
+    
+    Alignment patterns help scanners adjust for surface distortion.
+    
+    @param m: QR code matrix
+    @param r: Centre row coordinate
+    @param c: Centre column coordinate
+    """
     pat = [
         [1, 1, 1, 1, 1],
         [1, 0, 0, 0, 1],
@@ -91,6 +142,17 @@ def place_alignment_pattern(m, r, c):
                     mark_function(nr, nc)
 
 def apply_patterns(m, version):
+    """
+    Apply all functional patterns to the QR code matrix including:
+    - Finder patterns
+    - Separators
+    - Timing patterns
+    - Alignment patterns (version 2+)
+    - Dark module
+    
+    @param m: QR code matrix
+    @param version: QR code version number
+    """
     size = len(m)
     for (r, c) in [(0, 0), (0, size-7), (size-7, 0)]:
         place_finder_pattern(m, r, c)
@@ -120,6 +182,12 @@ def apply_patterns(m, version):
             place_alignment_pattern(m, 18, 18)
 
 def place_format_info(m, mask_id):
+    """
+    Encode format information in the matrix containing error correction level and mask pattern.
+    
+    @param m: QR code matrix
+    @param mask_id: Numeric identifier for mask pattern (0-7)
+    """
     fmt = FORMAT_STRINGS[mask_id]
     size = len(m)
     pos1 = [*((8, i) for i in range(0, 6)), (8, 7), (8, 8), (7, 8), *((i, 8) for i in range(5, -1, -1))]
@@ -132,6 +200,14 @@ def place_format_info(m, mask_id):
         mark_function(r, c)
 
 def map_data(m, full_cw):
+    """
+    Map data and error correction codewords into the matrix using zig-zag pattern.
+    
+    Skips functional module areas and maintains QR code structure requirements.
+    
+    @param m: QR code matrix
+    @param full_cw: Combined data and error correction codewords
+    """
     bits = ''.join(f'{cw:08b}' for cw in full_cw)
     bit_idx = 0
     up = True
@@ -153,6 +229,12 @@ def map_data(m, full_cw):
         col -= 2
 
 def apply_mask(m, mask_id):
+    """
+    Apply selected mask pattern to data areas of QR code to optimise scannability.
+    
+    @param m: QR code matrix
+    @param mask_id: Numeric identifier for mask pattern (0-7)
+    """
     size = len(m)
     def condition(r, c):
         if mask_id == 0: return (r + c) % 2 == 0
@@ -168,11 +250,23 @@ def apply_mask(m, mask_id):
             if (r, c) not in FUNCTION_MODULES and condition(r, c):
                 m[r][c] ^= 1
 
-def score_penalty(m):
+def score_penalty(m) -> int:
+    """
+    Calculate penalty score for QR code matrix based on ISO/IEC 18004 evaluation criteria.
+    
+    Evaluation rules:
+    1. Consecutive modules in row/column
+    2. 2x2 blocks of same colour
+    3. Finder-like patterns
+    4. Dark/light module balance
+    
+    @param m: QR code matrix to evaluate
+    @return: Calculated penalty score (lower is better)
+    """
     size = len(m)
     score = 0
 
-    # Rule 1
+    # Rule 1: Consecutive modules
     for row in m:
         for i in range(size - 4):
             if row[i] == row[i+1] == row[i+2] == row[i+3] == row[i+4]:
@@ -189,13 +283,13 @@ def score_penalty(m):
                     run_len += 1
                 score += 3 + (run_len - 5)
 
-    # Rule 2
+    # Rule 2: 2x2 blocks
     for r in range(size - 1):
         for c in range(size - 1):
             if m[r][c] == m[r][c+1] == m[r+1][c] == m[r+1][c+1]:
                 score += 3
 
-    # Rule 3
+    # Rule 3: Finder patterns
     pattern1 = [1,0,1,1,1,0,1,0,0,0,0]
     pattern2 = [0,0,0,0,1,0,1,1,1,0,1]
     for row in m:
@@ -209,7 +303,7 @@ def score_penalty(m):
             if col == pattern1 or col == pattern2:
                 score += 40
 
-    # Rule 4
+    # Rule 4: Colour balance
     dark = sum(cell == 1 for row in m for cell in row)
     total = size * size
     k = abs(dark * 100 // total - 50) // 5
@@ -221,7 +315,19 @@ def print_matrix(m, delay=0.0,
                  fg_colour='', bg_colour='', 
                  reset_colour='\033[0m', 
                  frame=False, scale=1):
-    # Optional: apply ANSI color codes
+    """
+    Render QR code matrix to console with optional formatting.
+    
+    @param m: QR code matrix to display
+    @param delay: Optional delay after printing
+    @param fg_char: Foreground character(s)
+    @param bg_char: Background character(s)
+    @param fg_colour: ANSI foreground colour code
+    @param bg_colour: ANSI background colour code
+    @param reset_colour: ANSI reset code
+    @param frame: Add border around QR code
+    @param scale: Module scaling factor (1-3)
+    """
     fg = f"{fg_colour}{fg_char * scale}"
     bg = f"{bg_colour}{bg_char * scale}"
     
@@ -245,7 +351,19 @@ def print_matrix(m, delay=0.0,
         time.sleep(delay)
 
 def main():
-    # Get the user input for the text (or URL) to encode.
+    """
+    Main entry point for QR code generation program.
+    
+    Handles user interaction, configuration, and generation workflow:
+    1. Text input collection
+    2. Version selection
+    3. Customisation options
+    4. Data encoding
+    5. Error correction generation
+    6. Matrix construction
+    7. Mask pattern optimisation
+    8. Final QR code output
+    """
     text = input("Enter text to encode: ")
 
     # Ask the user if they want to see the process of the QR's creation.
@@ -282,6 +400,7 @@ def main():
 
     # Step-by-step creation of the QR code.
     # Step 1. Convert input text to QR data bitstream
+    # Generation pipeline
     bitstream = make_data_bitstream(text, version)
     if explain:
         print("\nStep 1: Data bitstream.")
