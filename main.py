@@ -73,15 +73,32 @@ def place_finder_pattern(m, r, c):
             m[r+dr][c+dc] = pat[dr][dc]
             mark_function(r+dr, c+dc)
 
-def apply_patterns(m):
+def place_alignment_pattern(m, r, c):
+    pat = [
+        [1, 1, 1, 1, 1],
+        [1, 0, 0, 0, 1],
+        [1, 0, 1, 0, 1],
+        [1, 0, 0, 0, 1],
+        [1, 1, 1, 1, 1]
+    ]
+    for dr in range(-2, 3):
+        for dc in range(-2, 3):
+            nr = r + dr
+            nc = c + dc
+            if 0 <= nr < len(m) and 0 <= nc < len(m):
+                if (nr, nc) not in FUNCTION_MODULES:
+                    m[nr][nc] = pat[dr + 2][dc + 2]
+                    mark_function(nr, nc)
+
+def apply_patterns(m, version):
     size = len(m)
     for (r, c) in [(0, 0), (0, size-7), (size-7, 0)]:
         place_finder_pattern(m, r, c)
 
     sep_coords = [
-        *( (i,7) for i in range(8) ), *( (7,i) for i in range(8) ),
-        *( (i,size-8) for i in range(8) ), *( (7,size-1-i) for i in range(8) ),
-        *( (size-8,i) for i in range(8) ), *( (size-1-i,7) for i in range(8) )
+        *((i,7) for i in range(8)), *((7,i) for i in range(8)),
+        *((i,size-8) for i in range(8)), *((7,size-1-i) for i in range(8)),
+        *((size-8,i) for i in range(8)), *((size-1-i,7) for i in range(8))
     ]
     for (r, c) in sep_coords:
         m[r][c] = 0
@@ -96,11 +113,17 @@ def apply_patterns(m):
     m[dm[0]][dm[1]] = 1
     mark_function(*dm)
 
+    # Add alignment patterns for version 2
+    if version >= 2:
+        # Version 2 has alignment pattern at (18, 18)
+        if size == 25:
+            place_alignment_pattern(m, 18, 18)
+
 def place_format_info(m, mask_id):
     fmt = FORMAT_STRINGS[mask_id]
     size = len(m)
-    pos1 = [*( (8, i) for i in range(0, 6) ), (8, 7), (8, 8), (7, 8), *( (i, 8) for i in range(5, -1, -1) )]
-    pos2 = [*( (size - 1 - i, 8) for i in range(0, 7) ), *( (8, size - 1 - i) for i in range(0, 8) )]
+    pos1 = [*((8, i) for i in range(0, 6)), (8, 7), (8, 8), (7, 8), *((i, 8) for i in range(5, -1, -1))]
+    pos2 = [*((size - 1 - i, 8) for i in range(0, 7)), *((8, size - 1 - i) for i in range(0, 8))]
     for idx, (r, c) in enumerate(pos1):
         m[r][c] = int(fmt[idx])
         mark_function(r, c)
@@ -300,7 +323,7 @@ def main():
         # Initialize empty QR matrix
         matrix = initialize_matrix(size)
         # Add finder, timing, and other function patterns
-        apply_patterns(matrix)
+        apply_patterns(matrix, version)
         if explain and mask_id == 0:
             print("\nStep 5: Function patterns (finder, timing, etc).")
             print_matrix(matrix)
@@ -345,8 +368,6 @@ def main():
         frame=frame,
         scale=scale
     )
-
-    print_matrix(best_matrix)
 
 if __name__ == '__main__':
     main()
