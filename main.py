@@ -73,7 +73,7 @@ def generate_error_correction(data_cw: list[int], version: int) -> list[int]:
     full = rs.encode(bytes(data_cw))
     return list(full[-ec_cw:])
 
-def initialize_matrix(size: int) -> list[list[int]]:
+def initialise_matrix(size: int) -> list[list[int]]:
     """
     Create an empty QR code matrix with all positions initialised to -1.
     
@@ -439,8 +439,8 @@ def main():
     for mask_id in range(8):
         global FUNCTION_MODULES
         FUNCTION_MODULES = set()
-        # Initialize empty QR matrix
-        matrix = initialize_matrix(size)
+        # Initialise empty QR matrix
+        matrix = initialise_matrix(size)
         # Add finder, timing, and other function patterns
         apply_patterns(matrix, version)
         if explain and mask_id == 0:
