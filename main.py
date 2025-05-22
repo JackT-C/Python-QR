@@ -3,6 +3,7 @@ import math
 import reedsolo
 import time
 from typing import Callable
+from PIL import Image 
 
 # Constants for Versions 1 and 2
 VERSION_PARAMETERS = {
@@ -350,6 +351,26 @@ def print_matrix(m, delay=0.0,
     if delay:
         time.sleep(delay)
 
+def save_matrix_as_image(m, filename="qr_output.png", scale=10):
+    """
+    Save the QR code matrix as a PNG image using Pillow.
+    
+    @param m: QR code matrix
+    @param filename: Output file name
+    @param scale: Pixel size per module
+    """
+    size = len(m)
+    img = Image.new("RGB", (size * scale, size * scale), "white")
+    pixels = img.load()
+    for r in range(size):
+        for c in range(size):
+            color = (0, 0, 0) if m[r][c] else (255, 255, 255)
+            for dr in range(scale):
+                for dc in range(scale):
+                    pixels[c * scale + dc, r * scale + dr] = color
+    img.save(filename)
+    print(f"QR code saved as {filename}")
+
 def main():
     """
     Main entry point for QR code generation program.
@@ -487,6 +508,9 @@ def main():
         frame=frame,
         scale=scale
     )
+
+    # Save as image
+    save_matrix_as_image(best_matrix, "qr_output.png", scale=10)
 
 if __name__ == '__main__':
     main()
