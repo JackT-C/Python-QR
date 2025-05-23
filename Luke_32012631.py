@@ -10,7 +10,7 @@ from tkinter import ttk, messagebox, colorchooser
 from PIL import Image, ImageTk
 import io
 
-from qr import (
+from Jack_32007852 import (
     VERSION_PARAMETERS, make_data_bitstream, generate_error_correction,
     initialise_matrix, apply_patterns, place_format_info, map_data,
     apply_mask, score_penalty, save_matrix_as_image
@@ -88,7 +88,7 @@ def gui_main():
         best_matrix = None
 
         for mask_id in range(8):
-            from qr import reset_function_modules
+            from Jack_32007852 import reset_function_modules
             reset_function_modules()
             matrix = initialise_matrix(size)
             apply_patterns(matrix, version)
