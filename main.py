@@ -1,10 +1,10 @@
 # Import relevant libraries
-import math
 import reedsolo
-import re
 import time
-from typing import Callable
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageTk
+import tkinter as tk
+from tkinter import ttk, messagebox, colorchooser
+import io
 
 # Constants for Versions 1 and 2
 VERSION_PARAMETERS = {
@@ -205,15 +205,39 @@ def apply_patterns(m, version):
 
 def ansi_to_rgb(ansi_code):
     """
-    Converts ANSI escape code or numeric value to an RGB tuple value.
+    Converts ANSI escape code, numeric value, or hex color string to an RGB tuple value.
 
-    @param asni_code: The ASNI code to conver
+    @param ansi_code: The ANSI code or hex color to convert
     """
+    if not ansi_code:
+        return None
+    # Handle hex color codes like "#ff0000"
+    if isinstance(ansi_code, str) and ansi_code.startswith("#") and len(ansi_code) == 7:
+        try:
+            return tuple(int(ansi_code[i:i+2], 16) for i in (1, 3, 5))
+        except Exception:
+            return None
+    # Handle named colors (basic support)
+    named_colors = {
+        "black": (0, 0, 0),
+        "white": (255, 255, 255),
+        "red": (255, 0, 0),
+        "green": (0, 255, 0),
+        "blue": (0, 0, 255),
+        "yellow": (255, 255, 0),
+        "cyan": (0, 255, 255),
+        "magenta": (255, 0, 255),
+        "gray": (128, 128, 128),
+        "grey": (128, 128, 128),
+    }
+    if isinstance(ansi_code, str) and ansi_code.lower() in named_colors:
+        return named_colors[ansi_code.lower()]
+    # Handle ANSI numeric codes
     try:
         code = int(str(ansi_code).strip().replace('\033[', '').replace('m', ''))
-        return
-    except:
-        return
+        return ANSI_RGB_MAP.get(code)
+    except Exception:
+        return None
 
 def place_format_info(m, mask_id):
     """
@@ -433,177 +457,195 @@ def save_matrix_as_image(m, filename="qr_output.png",
                 color = fg_rgb if m[r][c] else bg_rgb
                 draw.text((x, y), char, fill=color, font=ImageFont.load_default())
 
-    img.save(filename)
+    if isinstance(filename, io.BytesIO):
+        img.save(filename, format="PNG")
+    else:
+        img.save(filename)
     print(f"\nQR code saved as: {filename}!")
 
-def main():
-    """
-    Main entry point for QR code generation program.
-    
-    Handles user interaction, configuration, and generation workflow:
-    1. Text input collection
-    2. Version selection
-    3. Customisation options
-    4. Data encoding
-    5. Error correction generation
-    6. Matrix construction
-    7. Mask pattern optimisation
-    8. Final QR code output
-    """
-    text = input("Enter text to encode: ")
+def gui_main():
+    def on_generate():
+        text = entry_text.get()
+        if not text:
+            messagebox.showwarning("Input required", "Please enter text to encode.")
+            return
 
-    # Ask the user if they want to see the process of the QR's creation.
-    explain = input("Would you like to see the step-by-step of the QR code's creation? (y/n): ").strip().lower() == 'y'
+        # Get customisation options
+        try:
+            scale = int(scale_var.get())
+            if scale < 1 or scale > 3:
+                raise ValueError
+        except ValueError:
+            messagebox.showerror("Invalid scale", "Scale must be 1, 2, or 3.")
+            return
 
-    # Choose the QR version based on input length.
-    for version in [1, 2]:
-        if len(text) <= VERSION_PARAMETERS[version]['data_codewords']:
-            break
-    else:
-        print("The input is too long for the Version 2 QR Code")
-        return
-    
-    # Allow for customisation of the QR code.
-    customise = input("Would you like to customise how the QR code is displayed? (y/n): ").strip().lower() == 'y'
-    if customise:
-        # Option to Scale the QR code by 1-3x.
-        scale = int(input("Would you like to scale the QR code? (1-3x): ") or "1")
+        frame = frame_var.get()
+        fg_char = fg_char_var.get() or "██"
+        bg_char = bg_char_var.get() or "  "
+        fg_colour = fg_colour_var.get()
+        bg_colour = bg_colour_var.get()
+        explain = explain_var.get()
 
-        # Opton to add a frame to the QR code.
-        frame = input("Would you like to add a frame? (y/n): ").strip().lower() == 'y'
-
-        # Option to change module shapes.
-        char = input("Would you like to change the characters of the modules in the QR code? (y/n): ").strip().lower()
-        if char == "y":
-            fg_char = input("Enter the foreground character (e.g, # or []): ") or "██"
-            bg_char = input("Enter the background character (e.g. _ or SPACE): ") or "  "
+        # Choose version
+        for version in [1, 2]:
+            if len(text) <= VERSION_PARAMETERS[version]['data_codewords']:
+                break
         else:
-            fg_char = "██"
-            bg_char = "  "
+            messagebox.showerror("Too long", "The input is too long for Version 2 QR Code")
+            return
 
-        # Option to set background and foreground colours.
-        user_fg_colour = input("Foreground colour ANSI code (e.g, [37m for White): ")
-        fg_colour = '\033' + user_fg_colour if user_fg_colour else '\033[37m'
-        user_bg_colour = input("Background colour ANSI code (e.g, [97m for Black): ")
-        bg_colour = '\033' + user_bg_colour if user_bg_colour else '\033[97m'
+        version_var.set(f"QR Version: {version}")
 
-    else:
-        # Use default values.
-        scale = 1
-        frame = False
-        fg_colour = ''
-        bg_colour = ''
-        fg_char = '██'
-        bg_char = '  '
+        # Step-by-step log
+        step_log = []
 
-    print(f"Using Version {version} QR Code!")
+        # Step 1
+        bitstream = make_data_bitstream(text, version)
+        if explain:
+            step_log.append("Step 1: Data bitstream.\n" + bitstream)
 
-    # Step-by-step creation of the QR code.
-    # Step 1. Convert the input text to a QR data bitstream.
-    bitstream = make_data_bitstream(text, version)
-    if explain:
-        print("\nStep 1: Data bitstream.")
-        print(bitstream)
-        input("Press Enter to continue...")
+        # Step 2
+        data_cw = [int(bitstream[i:i+8], 2) for i in range(0, len(bitstream), 8)]
+        if explain:
+            step_log.append("Step 2: Data codewords (bytes).\n" + str(data_cw))
 
-    # Step 2. Split the bitstream into data codewords (bytes).
-    data_cw = [int(bitstream[i:i+8], 2) for i in range(0, len(bitstream), 8)]
-    if explain:
-        print("\nStep 2: Data codewords (bytes).")
-        print(data_cw)
-        input("Press Enter to continue...")
+        # Step 3
+        ec_cw = generate_error_correction(data_cw, version)
+        if explain:
+            step_log.append("Step 3: Error correction codewords.\n" + str(ec_cw))
 
-    # Step 3. Generate error correction codewords.
-    ec_cw = generate_error_correction(data_cw, version)
-    if explain:
-        print("\nStep 3: Error correction codewords.")
-        print(ec_cw)
-        input("Press Enter to continue...")
+        # Step 4
+        full_cw = data_cw + ec_cw
+        if explain:
+            step_log.append("Step 4: Combined data + error correction codewords.\n" + str(full_cw))
 
-    # Step 4. Combine the data and error correction codewords.
-    full_cw = data_cw + ec_cw
-    if explain:
-        print("\nStep 4: Combined data + error correction codewords.")
-        print(full_cw)
-        input("Press Enter to continue...")
+        size = VERSION_PARAMETERS[version]['size']
+        best_mask = 0
+        lowest_score = float('inf')
+        best_matrix = None
 
-    # Get the QR matrix size for the chosen version.
-    size = VERSION_PARAMETERS[version]['size']
+        for mask_id in range(8):
+            global FUNCTION_MODULES
+            FUNCTION_MODULES = set()
+            matrix = initialise_matrix(size)
+            apply_patterns(matrix, version)
+            if explain and mask_id == 0:
+                step_log.append("Step 5: Function patterns (finder, timing, etc).")
+            place_format_info(matrix, mask_id)
+            if explain and mask_id == 0:
+                step_log.append("Step 6: Format information.")
+            map_data(matrix, full_cw)
+            if explain and mask_id == 0:
+                step_log.append("Step 7: Data mapping.")
+            apply_mask(matrix, mask_id)
+            if explain and mask_id == 0:
+                step_log.append("Step 8: Mask pattern applied (mask 0 shown).")
+            score = score_penalty(matrix)
+            if score < lowest_score:
+                best_mask = mask_id
+                lowest_score = score
+                best_matrix = [row[:] for row in matrix]
 
-    # Create variables.
-    best_mask = 0
-    lowest_score = float('inf')
-    best_matrix = None
+        if explain:
+            step_log.append(f"Best mask: {best_mask} (score {lowest_score})")
 
-    # Try all 8 different mask patterns and select the one with the lowest penalty score.
-    for mask_id in range(8):
-        global FUNCTION_MODULES
-        FUNCTION_MODULES = set()
-
-        # Initialise empty QR matrix
-        matrix = initialise_matrix(size)
-
-        # Step 5. Add finder, timing, and other function patterns.
-        apply_patterns(matrix, version)
-        if explain and mask_id == 0:
-            print("\nStep 5: Function patterns (finder, timing, etc).")
-            print_matrix(matrix)
-            input("Press Enter to continue...")
-
-        # Step 6. Place the format information (error correction level and mask ID).
-        place_format_info(matrix, mask_id)
-        if explain and mask_id == 0:
-            print("\nStep 6: Format information.")
-            print_matrix(matrix)
-            input("Press Enter to continue...")
-
-        # Step 7. Map data and error correction codewords into the matrix.
-        map_data(matrix, full_cw)
-        if explain and mask_id == 0:
-            print("\nStep 7: Data mapping.")
-            print_matrix(matrix)
-            input("Press Enter to continue...")
-
-        # Step 8. Apply the current mask pattern.
-        apply_mask(matrix, mask_id)
-        if explain and mask_id == 0:
-            print("\nStep 8: Mask pattern applied (mask 0 shown).")
-            print_matrix(matrix)
-            input("Press Enter to continue...")
-
-        # Calculate a penalty score for the masked matrix.
-        score = score_penalty(matrix)
-
-        # Keep the mask with the lowest penalty score.
-        if score < lowest_score:
-            best_mask = mask_id
-            lowest_score = score
-            best_matrix = [row[:] for row in matrix]
-
-    # Output the best mask and print the resulting QR code matrix.
-    print(f"\nBest mask: {best_mask} (score {lowest_score})")
-    print_matrix(
-        best_matrix,
-        fg_char=fg_char, 
-        bg_char=bg_char,
-        fg_colour=fg_colour,
-        bg_colour=bg_colour,
-        frame=frame,
-        scale=scale,
-        version=version
-    )
-
-    # Save the QR code as an image.
-    save_matrix_as_image(
-        best_matrix, 
-        "qr_output.png", 
-        scale=10,
-        fg_char=fg_char, 
-        bg_char=bg_char,
-        fg_colour=fg_colour,
-        bg_colour=bg_colour,
-        frame=frame,
+        # Save QR as image in memory
+        img_bytes = io.BytesIO()
+        save_matrix_as_image(
+            best_matrix,
+            filename=img_bytes,
+            scale=10,
+            fg_char=fg_char,
+            bg_char=bg_char,
+            fg_colour=fg_colour,
+            bg_colour=bg_colour,
+            frame=frame
         )
+        img_bytes.seek(0)
+        img = Image.open(img_bytes)
+        img.thumbnail((300, 300))
+        img_tk = ImageTk.PhotoImage(img)
+        qr_label.config(image=img_tk)
+        qr_label.image = img_tk
+
+        # Show step log
+        if explain:
+            step_text.config(state="normal")
+            step_text.delete(1.0, tk.END)
+            step_text.insert(tk.END, "\n\n".join(step_log))
+            step_text.config(state="disabled")
+        else:
+            step_text.config(state="normal")
+            step_text.delete(1.0, tk.END)
+            step_text.config(state="disabled")
+
+    def pick_fg_color():
+        color = colorchooser.askcolor(title="Choose foreground color")
+        if color and color[1]:
+            fg_colour_var.set(color[1])
+
+    def pick_bg_color():
+        color = colorchooser.askcolor(title="Choose background color")
+        if color and color[1]:
+            bg_colour_var.set(color[1])
+
+    root = tk.Tk()
+    root.title("QR Code Generator")
+
+    mainframe = ttk.Frame(root, padding=10)
+    mainframe.grid(row=0, column=0, sticky="nsew")
+
+    # Input
+    ttk.Label(mainframe, text="Text to encode:").grid(row=0, column=0, sticky="w")
+    entry_text = ttk.Entry(mainframe, width=40)
+    entry_text.grid(row=1, column=0, columnspan=3, sticky="ew", pady=2)
+    entry_text.focus()
+
+    # Customisation
+    ttk.Label(mainframe, text="Scale (1-3):").grid(row=2, column=0, sticky="w")
+    scale_var = tk.StringVar(value="1")
+    ttk.Entry(mainframe, textvariable=scale_var, width=5).grid(row=2, column=1, sticky="w")
+
+    frame_var = tk.BooleanVar(value=False)
+    ttk.Checkbutton(mainframe, text="Frame", variable=frame_var).grid(row=2, column=2, sticky="w")
+
+    ttk.Label(mainframe, text="FG Char:").grid(row=3, column=0, sticky="w")
+    fg_char_var = tk.StringVar(value="██")
+    ttk.Entry(mainframe, textvariable=fg_char_var, width=5).grid(row=3, column=1, sticky="w")
+
+    ttk.Label(mainframe, text="BG Char:").grid(row=3, column=2, sticky="w")
+    bg_char_var = tk.StringVar(value="  ")
+    ttk.Entry(mainframe, textvariable=bg_char_var, width=5).grid(row=3, column=3, sticky="w")
+
+    fg_colour_var = tk.StringVar(value="")
+    bg_colour_var = tk.StringVar(value="")
+    ttk.Label(mainframe, text="FG Color:").grid(row=4, column=0, sticky="w")
+    ttk.Entry(mainframe, textvariable=fg_colour_var, width=10).grid(row=4, column=1, sticky="w")
+    ttk.Button(mainframe, text="Pick", command=pick_fg_color).grid(row=4, column=2, sticky="w")
+
+    ttk.Label(mainframe, text="BG Color:").grid(row=5, column=0, sticky="w")
+    ttk.Entry(mainframe, textvariable=bg_colour_var, width=10).grid(row=5, column=1, sticky="w")
+    ttk.Button(mainframe, text="Pick", command=pick_bg_color).grid(row=5, column=2, sticky="w")
+
+    explain_var = tk.BooleanVar(value=False)
+    ttk.Checkbutton(mainframe, text="Show step-by-step", variable=explain_var).grid(row=6, column=0, columnspan=2, sticky="w")
+
+    ttk.Button(mainframe, text="Generate QR", command=on_generate).grid(row=7, column=0, columnspan=3, pady=5)
+
+    # QR Image
+    qr_label = ttk.Label(mainframe)
+    qr_label.grid(row=8, column=0, columnspan=4, pady=10)
+
+    # Version display
+    version_var = tk.StringVar(value="")
+    version_label = ttk.Label(mainframe, textvariable=version_var)
+    version_label.grid(row=9, column=0, columnspan=4, pady=2)
+
+    # Step-by-step output
+    step_text = tk.Text(mainframe, width=60, height=15, state="disabled", wrap="word")
+    step_text.grid(row=10, column=0, columnspan=4, pady=5)
+
+    root.mainloop()
 
 if __name__ == '__main__':
-    main()
+    gui_main()
