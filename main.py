@@ -1,9 +1,10 @@
 # Import relevant libraries
 import math
 import reedsolo
+import re
 import time
 from typing import Callable
-from PIL import Image 
+from PIL import Image, ImageDraw, ImageFont
 
 # Constants for Versions 1 and 2
 VERSION_PARAMETERS = {
@@ -22,6 +23,26 @@ FORMAT_STRINGS = [
     '111011111000100', '111001011110011', '111110110101010', '111100010011101',
     '110011000101111', '110001100011000', '110110001000001', '110100101110110'
 ]
+
+# ASNI to RGB Conversion Map
+ANSI_RGB_MAP = {
+    30: (0, 0, 0),
+    31: (128, 0, 0),
+    32: (0, 128, 0),
+    33: (128, 128, 0),
+    34: (0, 0, 128),
+    35: (128, 0, 128),
+    36: (0, 128, 128),
+    37: (192, 192, 192),
+    90: (128, 128, 128),
+    91: (255, 0, 0),
+    92: (0, 255, 0),
+    93: (255, 255, 0),
+    94: (0, 0, 255),
+    95: (255, 0, 255),
+    96: (0, 255, 255),
+    97: (255, 255, 255),
+}
 
 FUNCTION_MODULES = set()
 
@@ -182,6 +203,18 @@ def apply_patterns(m, version):
         if size == 25:
             place_alignment_pattern(m, 18, 18)
 
+def ansi_to_rgb(ansi_code):
+    """
+    Converts ANSI escape code or numeric value to an RGB tuple value.
+
+    @param asni_code: The ASNI code to conver
+    """
+    try:
+        code = int(str(ansi_code).strip().replace('\033[', '').replace('m', ''))
+        return
+    except:
+        return
+
 def place_format_info(m, mask_id):
     """
     Encode format information in the matrix containing error correction level and mask pattern.
@@ -315,7 +348,7 @@ def print_matrix(m, delay=0.0,
                  fg_char='██', bg_char='  ', 
                  fg_colour='', bg_colour='', 
                  reset_colour='\033[0m', 
-                 frame=False, scale=1):
+                 frame=False, scale=1, version=1):
     """
     Render QR code matrix to console with optional formatting.
     
@@ -326,50 +359,82 @@ def print_matrix(m, delay=0.0,
     @param fg_colour: ANSI foreground colour code
     @param bg_colour: ANSI background colour code
     @param reset_colour: ANSI reset code
-    @param frame: Add border around QR code
+    @param frame: Add border around the QR code
     @param scale: Module scaling factor (1-3)
+    @param version: 21x21 or 25x25 QR code size
     """
+
+    # Background and foreground colours.
     fg = f"{fg_colour}{fg_char * scale}"
     bg = f"{bg_colour}{bg_char * scale}"
     
-    # Optional frame (top)
+    # Frame outline (Top).
     if frame:
-        width = len(m[0]) * scale + 2
+        if version == 1:
+            width = len(m[0]) * scale + 21
+        else:
+            width = len(m[0]) * scale + 25
         print('┌' + '─' * width + '┐')
 
+    # Output the QR lines and append frame to start and end.
     for row in m:
         line = ''.join(fg if v else bg for v in row for _ in range(scale))
-        if frame:
-            print('│' + line + '│')
-        else:
-            print(line)
+        for i in range(scale):
+            if frame:
+                print('│' + line + '│')
+            else:
+                print(line)
 
-    # Optional frame (bottom)
+    # Frame outline (Bottom).
     if frame:
         print('└' + '─' * width + '┘')
 
     if delay:
         time.sleep(delay)
 
-def save_matrix_as_image(m, filename="qr_output.png", scale=10):
+def save_matrix_as_image(m, filename="qr_output.png", 
+                        scale=10, fg_char='██', 
+                        bg_char='  ', fg_colour='', 
+                        bg_colour='', frame=False):
     """
     Save the QR code matrix as a PNG image using Pillow.
-    
-    @param m: QR code matrix
-    @param filename: Output file name
-    @param scale: Pixel size per module
+
+    @param m: QR code matrix to display
+    @param filename: Name of the File.
+    @param scale: Size of the QR.
+    @param fg_char: Foreground character(s)
+    @param bg_char: Background character(s)
+    @param fg_colour: ANSI foreground colour code
+    @param bg_colour: ANSI background colour code
+    @param frame: Add border around the QR code
     """
     size = len(m)
-    img = Image.new("RGB", (size * scale, size * scale), "white")
-    pixels = img.load()
+
+    is_rectangle = (fg_char == '██' and bg_char == '  ')
+
+    fg_rgb = ansi_to_rgb(fg_colour) or (0, 0, 0)
+    bg_rgb = ansi_to_rgb(bg_colour) or (255, 255, 255)
+
+    frame_width = 10 if frame else 0
+    image_size = (size * scale + 2 * frame_width, size * scale + 2 * frame_width)
+
+    img = Image.new("RGB", image_size, bg_rgb)
+    draw = ImageDraw.Draw(img)
+
     for r in range(size):
         for c in range(size):
-            color = (0, 0, 0) if m[r][c] else (255, 255, 255)
-            for dr in range(scale):
-                for dc in range(scale):
-                    pixels[c * scale + dc, r * scale + dr] = color
+            x = c * scale + frame_width
+            y = r * scale + frame_width
+            if is_rectangle:
+                color = fg_rgb if m[r][c] else bg_rgb
+                draw.rectangle([x, y, x + scale - 1, y + scale - 1], fill=color)
+            else:
+                char = fg_char if m[r][c] else bg_char
+                color = fg_rgb if m[r][c] else bg_rgb
+                draw.text((x, y), char, fill=color, font=ImageFont.load_default())
+
     img.save(filename)
-    print(f"QR code saved as {filename}")
+    print(f"\nQR code saved as: {filename}!")
 
 def main():
     """
@@ -401,116 +466,144 @@ def main():
     # Allow for customisation of the QR code.
     customise = input("Would you like to customise how the QR code is displayed? (y/n): ").strip().lower() == 'y'
     if customise:
-        # Option to Scale the QR code by a specific ration.
-        scale = int(input("Module scale (1-3): ") or "1")
+        # Option to Scale the QR code by 1-3x.
+        scale = int(input("Would you like to scale the QR code? (1-3x): ") or "1")
 
         # Opton to add a frame to the QR code.
         frame = input("Would you like to add a frame? (y/n): ").strip().lower() == 'y'
 
+        # Option to change module shapes.
+        char = input("Would you like to change the characters of the modules in the QR code? (y/n): ").strip().lower()
+        if char == "y":
+            fg_char = input("Enter the foreground character (e.g, # or []): ") or "██"
+            bg_char = input("Enter the background character (e.g. _ or SPACE): ") or "  "
+        else:
+            fg_char = "██"
+            bg_char = "  "
+
         # Option to set background and foreground colours.
-        fg_colour = input("Foreground colour ANSI code (e.g., \033[38;5;46m for green): ") or '\033[38;5;46m'
-        bg_colour = input("Background colour ANSI code (e.g., \033[48;5;235m for dark gray): ") or '\033[0m'
+        user_fg_colour = input("Foreground colour ANSI code (e.g, [37m for White): ")
+        fg_colour = '\033' + user_fg_colour if user_fg_colour else '\033[37m'
+        user_bg_colour = input("Background colour ANSI code (e.g, [97m for Black): ")
+        bg_colour = '\033' + user_bg_colour if user_bg_colour else '\033[97m'
+
     else:
         # Use default values.
         scale = 1
         frame = False
         fg_colour = ''
         bg_colour = ''
+        fg_char = '██'
+        bg_char = '  '
 
     print(f"Using Version {version} QR Code!")
 
     # Step-by-step creation of the QR code.
-    # Step 1. Convert input text to QR data bitstream
-    # Generation pipeline
+    # Step 1. Convert the input text to a QR data bitstream.
     bitstream = make_data_bitstream(text, version)
     if explain:
         print("\nStep 1: Data bitstream.")
         print(bitstream)
         input("Press Enter to continue...")
 
-    # Step 2. Split bitstream into data codewords (bytes)
+    # Step 2. Split the bitstream into data codewords (bytes).
     data_cw = [int(bitstream[i:i+8], 2) for i in range(0, len(bitstream), 8)]
     if explain:
         print("\nStep 2: Data codewords (bytes).")
         print(data_cw)
         input("Press Enter to continue...")
 
-    # Step 3. Generate error correction codewords
+    # Step 3. Generate error correction codewords.
     ec_cw = generate_error_correction(data_cw, version)
     if explain:
         print("\nStep 3: Error correction codewords.")
         print(ec_cw)
         input("Press Enter to continue...")
 
-    # Step 4. Combine data and error correction codewords
+    # Step 4. Combine the data and error correction codewords.
     full_cw = data_cw + ec_cw
     if explain:
         print("\nStep 4: Combined data + error correction codewords.")
         print(full_cw)
         input("Press Enter to continue...")
 
-    # Get QR matrix size for the chosen version
+    # Get the QR matrix size for the chosen version.
     size = VERSION_PARAMETERS[version]['size']
 
+    # Create variables.
     best_mask = 0
     lowest_score = float('inf')
     best_matrix = None
 
-    # Try all 8 mask patterns and select the one with the lowest penalty score
+    # Try all 8 different mask patterns and select the one with the lowest penalty score.
     for mask_id in range(8):
         global FUNCTION_MODULES
         FUNCTION_MODULES = set()
+
         # Initialise empty QR matrix
         matrix = initialise_matrix(size)
-        # Add finder, timing, and other function patterns
+
+        # Step 5. Add finder, timing, and other function patterns.
         apply_patterns(matrix, version)
         if explain and mask_id == 0:
             print("\nStep 5: Function patterns (finder, timing, etc).")
             print_matrix(matrix)
             input("Press Enter to continue...")
 
-        # Place format information (error correction level and mask id)
+        # Step 6. Place the format information (error correction level and mask ID).
         place_format_info(matrix, mask_id)
         if explain and mask_id == 0:
             print("\nStep 6: Format information.")
             print_matrix(matrix)
             input("Press Enter to continue...")
 
-        # Map data and error correction codewords into the matrix
+        # Step 7. Map data and error correction codewords into the matrix.
         map_data(matrix, full_cw)
         if explain and mask_id == 0:
             print("\nStep 7: Data mapping.")
             print_matrix(matrix)
             input("Press Enter to continue...")
 
-        # Apply the current mask pattern
+        # Step 8. Apply the current mask pattern.
         apply_mask(matrix, mask_id)
         if explain and mask_id == 0:
             print("\nStep 8: Mask pattern applied (mask 0 shown).")
             print_matrix(matrix)
             input("Press Enter to continue...")
 
-        # Calculate penalty score for the masked matrix
+        # Calculate a penalty score for the masked matrix.
         score = score_penalty(matrix)
-        # Keep the mask with the lowest penalty score
+
+        # Keep the mask with the lowest penalty score.
         if score < lowest_score:
             best_mask = mask_id
             lowest_score = score
             best_matrix = [row[:] for row in matrix]
 
-    # Output the best mask and print the resulting QR code matrix
-    print(f"Best mask: {best_mask} (score {lowest_score})")
+    # Output the best mask and print the resulting QR code matrix.
+    print(f"\nBest mask: {best_mask} (score {lowest_score})")
     print_matrix(
         best_matrix,
-        fg_char='██', bg_char='  ',
+        fg_char=fg_char, 
+        bg_char=bg_char,
         fg_colour=fg_colour,
         bg_colour=bg_colour,
         frame=frame,
-        scale=scale
+        scale=scale,
+        version=version
     )
 
-    # Save as image
-    save_matrix_as_image(best_matrix, "qr_output.png", scale=10)
+    # Save the QR code as an image.
+    save_matrix_as_image(
+        best_matrix, 
+        "qr_output.png", 
+        scale=10,
+        fg_char=fg_char, 
+        bg_char=bg_char,
+        fg_colour=fg_colour,
+        bg_colour=bg_colour,
+        frame=frame,
+        )
 
 if __name__ == '__main__':
     main()
