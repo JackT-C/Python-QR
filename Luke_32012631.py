@@ -108,9 +108,3 @@ def generate_qr(text, scale, frame, fg_char, bg_char, fg_colour, bg_colour, expl
     img_bytes.seek(0)
 
     return img_bytes.getvalue(), step_log  # Return image bytes and step log for external use
-
-# if __name__ == '__main__':
-#     """
-#     Entry point for the application. Starts the GUI.
-#     """
-#     gui_main()

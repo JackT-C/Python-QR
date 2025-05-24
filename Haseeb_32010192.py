@@ -214,9 +214,3 @@ def gui_main():
     step_text.grid(row=10, column=0, columnspan=4, pady=5)
 
     root.mainloop()
-
-if __name__ == '__main__':
-    """
-    Entry point for the application. Starts the GUI.
-    """
-    gui_main()
